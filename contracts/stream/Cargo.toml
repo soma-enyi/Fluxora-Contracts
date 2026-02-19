@@ -5,7 +5,10 @@ edition = "2021"
 description = "Fluxora USDC streaming contract for Stellar Soroban"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+testutils = ["soroban-sdk/testutils"]
 
 [dependencies]
 soroban-sdk = "21.7.7"
