@@ -467,3 +467,44 @@ fn test_multiple_streams_independent() {
     assert_eq!(s0.status, StreamStatus::Cancelled);
     assert_eq!(s1.status, StreamStatus::Active);
 }
+
+// ---------------------------------------------------------------------------
+// Tests — get_stream_state
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic(expected = "stream not found")]
+fn test_get_stream_state_non_existent() {
+    let ctx = TestContext::setup();
+    ctx.client().get_stream_state(&999);
+}
+
+#[test]
+fn test_get_stream_state_all_statuses() {
+    let ctx = TestContext::setup();
+
+    // 1. Check Active (from creation)
+    let id_active = ctx.create_default_stream();
+    let state_active = ctx.client().get_stream_state(&id_active);
+    assert_eq!(state_active.status, StreamStatus::Active);
+    assert_eq!(state_active.stream_id, id_active);
+
+    // 2. Check Paused
+    let id_paused = ctx.create_default_stream();
+    ctx.client().pause_stream(&id_paused);
+    let state_paused = ctx.client().get_stream_state(&id_paused);
+    assert_eq!(state_paused.status, StreamStatus::Paused);
+
+    // 3. Check Cancelled
+    let id_cancelled = ctx.create_default_stream();
+    ctx.client().cancel_stream(&id_cancelled);
+    let state_cancelled = ctx.client().get_stream_state(&id_cancelled);
+    assert_eq!(state_cancelled.status, StreamStatus::Cancelled);
+
+    // 4. Check Completed
+    let id_completed = ctx.create_default_stream();
+    ctx.env.ledger().set_timestamp(1000);
+    ctx.client().withdraw(&id_completed);
+    let state_completed = ctx.client().get_stream_state(&id_completed);
+    assert_eq!(state_completed.status, StreamStatus::Completed);
+}
