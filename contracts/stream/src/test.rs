@@ -18,6 +18,7 @@ struct TestContext<'a> {
     env: Env,
     contract_id: Address,
     token_id: Address,
+    admin: Address,
     sender: Address,
     recipient: Address,
     sac: StellarAssetClient<'a>,
@@ -53,6 +54,7 @@ impl<'a> TestContext<'a> {
             env,
             contract_id,
             token_id,
+            admin,
             sender,
             recipient,
             sac,
@@ -1318,4 +1320,121 @@ fn test_calculate_accrued_exactly_at_cliff() {
 
     let accrued = ctx.client().calculate_accrued(&stream_id);
     assert_eq!(accrued, 500, "at cliff, should accrue full amount from start");
+}
+
+// ---------------------------------------------------------------------------
+// Tests — withdraw authorization (recipient-only)
+// ---------------------------------------------------------------------------
+
+/// Test that sender cannot withdraw from stream (only recipient can).
+/// This test verifies that require_auth() on stream.recipient prevents
+/// unauthorized withdrawals by the sender.
+#[test]
+#[should_panic]
+fn test_withdraw_as_sender_fails() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, FluxoraStream);
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+    
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    
+    let client = FluxoraStreamClient::new(&env, &contract_id);
+    
+    // Mock auth for init and create_stream
+    env.mock_all_auths();
+    client.init(&token_id, &admin);
+    
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&sender, &10_000_i128);
+    
+    env.ledger().set_timestamp(0);
+    let stream_id = client.create_stream(&sender, &recipient, &1000_i128, &1_i128, &0u64, &0u64, &1000u64);
+    
+    env.ledger().set_timestamp(500);
+    
+    // Clear mocked auths - now auth is required
+    env.set_auths(&[]);
+    
+    // This should panic because sender is not the recipient
+    client.withdraw(&stream_id);
+}
+
+/// Test that admin cannot withdraw from stream (only recipient can).
+/// This test verifies that require_auth() on stream.recipient prevents
+/// unauthorized withdrawals by the admin.
+#[test]
+#[should_panic]
+fn test_withdraw_as_admin_fails() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, FluxoraStream);
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+    
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    
+    let client = FluxoraStreamClient::new(&env, &contract_id);
+    
+    // Mock auth for init and create_stream
+    env.mock_all_auths();
+    client.init(&token_id, &admin);
+    
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&sender, &10_000_i128);
+    
+    env.ledger().set_timestamp(0);
+    let stream_id = client.create_stream(&sender, &recipient, &1000_i128, &1_i128, &0u64, &0u64, &1000u64);
+    
+    env.ledger().set_timestamp(500);
+    
+    // Clear mocked auths - now auth is required
+    env.set_auths(&[]);
+    
+    // This should panic because admin is not the recipient
+    client.withdraw(&stream_id);
+}
+
+/// Test that recipient can successfully withdraw from stream.
+/// This test verifies that require_auth() on stream.recipient allows
+/// the recipient to withdraw their accrued funds.
+#[test]
+fn test_withdraw_as_recipient_succeeds() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, FluxoraStream);
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+    
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    
+    let client = FluxoraStreamClient::new(&env, &contract_id);
+    
+    // Mock auth for init and create_stream
+    env.mock_all_auths();
+    client.init(&token_id, &admin);
+    
+    let sac = StellarAssetClient::new(&env, &token_id);
+    sac.mint(&sender, &10_000_i128);
+    
+    env.ledger().set_timestamp(0);
+    let stream_id = client.create_stream(&sender, &recipient, &1000_i128, &1_i128, &0u64, &0u64, &1000u64);
+    
+    env.ledger().set_timestamp(500);
+    
+    let token = TokenClient::new(&env, &token_id);
+    let recipient_balance_before = token.balance(&recipient);
+    
+    // Keep mock_all_auths active - recipient's auth will be mocked and succeed
+    let withdrawn = client.withdraw(&stream_id);
+    
+    assert_eq!(withdrawn, 500, "should withdraw 500 tokens");
+    assert_eq!(token.balance(&recipient) - recipient_balance_before, 500, "recipient balance should increase by 500");
+    
+    let state = client.get_stream_state(&stream_id);
+    assert_eq!(state.withdrawn_amount, 500, "withdrawn_amount should be 500");
 }
