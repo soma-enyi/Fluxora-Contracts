@@ -18,6 +18,7 @@ struct TestContext<'a> {
     env: Env,
     contract_id: Address,
     token_id: Address,
+    admin: Address,
     sender: Address,
     recipient: Address,
     sac: StellarAssetClient<'a>,
@@ -53,6 +54,7 @@ impl<'a> TestContext<'a> {
             env,
             contract_id,
             token_id,
+            admin,
             sender,
             recipient,
             sac,
@@ -1309,7 +1311,10 @@ fn test_cancel_fully_accrued_no_refund() {
     ctx.client().cancel_stream(&stream_id);
 
     let sender_balance_after = ctx.token().balance(&ctx.sender);
-    assert_eq!(sender_balance_after, sender_balance_before, "nothing should be refunded");
+    assert_eq!(
+        sender_balance_after, sender_balance_before,
+        "nothing should be refunded"
+    );
 
     let state = ctx.client().get_stream_state(&stream_id);
     assert_eq!(state.status, StreamStatus::Cancelled);
@@ -1338,7 +1343,13 @@ fn test_withdraw_multiple_times() {
 fn test_create_stream_invalid_cliff_panics() {
     let ctx = TestContext::setup();
     ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &1000, &1, &100, &50, &200 // cliff < start
+        &ctx.sender,
+        &ctx.recipient,
+        &1000,
+        &1,
+        &100,
+        &50,
+        &200, // cliff < start
     );
 }
 
@@ -1348,13 +1359,25 @@ fn test_create_stream_edge_cliffs() {
 
     // Cliff at start_time
     let id1 = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &1000_i128, &1_i128, &100, &100, &1100
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &100,
+        &100,
+        &1100,
     );
     assert_eq!(ctx.client().get_stream_state(&id1).cliff_time, 100);
 
     // Cliff at end_time
     let id2 = ctx.client().create_stream(
-        &ctx.sender, &ctx.recipient, &1000_i128, &1_i128, &100, &1100, &1100
+        &ctx.sender,
+        &ctx.recipient,
+        &1000_i128,
+        &1_i128,
+        &100,
+        &1100,
+        &1100,
     );
     assert_eq!(ctx.client().get_stream_state(&id2).cliff_time, 1100);
 }
@@ -1366,5 +1389,8 @@ fn test_calculate_accrued_exactly_at_cliff() {
     ctx.env.ledger().set_timestamp(500);
 
     let accrued = ctx.client().calculate_accrued(&stream_id);
-    assert_eq!(accrued, 500, "at cliff, should accrue full amount from start");
+    assert_eq!(
+        accrued, 500,
+        "at cliff, should accrue full amount from start"
+    );
 }
