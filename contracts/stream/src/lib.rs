@@ -1,5 +1,7 @@
 #![no_std]
 
+mod accrual;
+
 use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, token, Address, Env};
 
 // ---------------------------------------------------------------------------
@@ -346,26 +348,14 @@ impl FluxoraStream {
         let stream = load_stream(&env, stream_id);
         let now = env.ledger().timestamp();
 
-        if now < stream.cliff_time {
-            return 0;
-        }
-
-        if stream.start_time >= stream.end_time || stream.rate_per_second < 0 {
-            return 0;
-        }
-
-        let elapsed_now = now.min(stream.end_time);
-        let elapsed = match elapsed_now.checked_sub(stream.start_time) {
-            Some(elapsed) => elapsed as i128,
-            None => return 0,
-        };
-
-        let accrued = match elapsed.checked_mul(stream.rate_per_second) {
-            Some(accrued) => accrued,
-            None => stream.deposit_amount,
-        };
-
-        accrued.min(stream.deposit_amount).max(0) // ensures result >= 0
+        accrual::calculate_accrued_amount(
+            stream.start_time,
+            stream.cliff_time,
+            stream.end_time,
+            stream.rate_per_second,
+            stream.deposit_amount,
+            now,
+        )
     }
 
     /// Fetches the global configuration.
